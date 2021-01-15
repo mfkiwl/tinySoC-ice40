@@ -54,10 +54,10 @@ def read(name):
     # [[Line_number, Program_Counter] [body] [comment]]
     # Line_number corrisponds to the line on the 
     # source code. the Program_Counter is incremented
-    # every time there is a non-empty line (even a comment
-    # counts as non empty). Note that two consecutive PC
-    # locations do NOT nessisarily corrispond to two
-    # consecutive address locations
+    # every time there is a non-empty line. Note that two
+    # consecutive PC locations do NOT nessisarily corrispond
+    # to two consecutive address locations. The comment feild
+    # is initially left blank, but is used later by the lexer
 
     # [[Line_number, Program_Counter] [body] 'comment']
     
@@ -70,106 +70,39 @@ def read(name):
     lineNumber = 0
     pc = 0
     
-    for lineNumber, line in enumerate(file, start = 1):
+    for lineNumber, line in enumerate(file, start=1):
         line = line.strip()
         if(line):
             block = []
-            rest = [] 												   # The input line without the comment
-            comment = ''
-            commentIndex = line.find(";")
-            if(commentIndex != -1):
-                comment = line[commentIndex:]
-                rest = line[:commentIndex].strip()
-            else:
-                rest = line
-
             block.append([lineNumber, pc])
-            if(rest): 												   # If we have code after we strip any comment out
-                split_rest = re.split(r'(\+|-|,|"|\s|(?:\[(?:l|L|h|H)\]))', rest)
-                split_rest = list(filter(None, split_rest))
-                block.append(split_rest)
-            else:
-                block.append([])
-            block.append(comment)
+            words = re.split(r'(\+|-|;|,|"|\s|(?:\[(?:l|L|h|H)\]))', line)
+            words = list(filter(None, words))
+            block.append(words)
+            block.append("")                     # A place holder for comments
             lines.append(block)
             pc += 1
-            
     file.close()
     return lines
 ##############################################################################################################
 def lexer(lines):
+    codeLines = []
     tokens = []
-    string = ""
-    stringCapture = False
-    codeLines = [x for x in lines if len(x[1])]                # codeLines only includes lines with code,
-    for line in codeLines:                                     # so if a line only has comments, then
-        tl = []                                                # then it's out
+
+    for line in lines:
+
+        tl = []
+        block = [line[0],[],""]
+
+        commentCapture = False
+        stringCapture = False
+
         for word in line[1]:
-            if(stringCapture == False):
-                word = word.strip()
-                word = word.upper()
-                if word == "\"":
-                    tl.append(["<quote>", word])
-                    stringCapture = True
-                elif(re.match(r'^\s*$',word)):
-                    continue
-                elif word in table.mnm_r_i:
-                    tl.append(["<mnm_r_i>", word])
-                elif word in table.mnm_r_l:
-                    tl.append(["<mnm_r_l>", word])
-                elif word in table.mnm_r_r:
-                    tl.append(["<mnm_r_r>", word])
-                elif word in table.mnm_r:
-                    tl.append(["<mnm_r>", word])
-                elif word in table.mnm_r_rp:
-                    tl.append(["<mnm_r_rp>", word])
-                elif word in table.mnm_rp:
-                    tl.append(["<mnm_rp>", word])
-                elif word in table.mnm_a:
-                    tl.append(["<mnm_a>", word])
-                elif word in table.mnm_n:
-                    tl.append(["<mnm_n>", word])
-                elif word in table.mnm_m:
-                    tl.append(["<mnm_m>", word])
-                elif word in table.drct_0:
-                    tl.append(["<drct_0>", word])
-                elif word in table.drct_1:
-                    tl.append(["<drct_1>", word])
-                elif word in table.drct_2:
-                    tl.append(["<drct_2>", word])
-                elif word in table.drct_m:
-                    tl.append(["<drct_m>", word])
-                elif word in table.drct_s:
-                    tl.append(["<drct_s>", word])
-                elif word == "[L]" or word == "[H]":
-                    tl.append(["<selector>", word])
-                elif word == ",":
-                    tl.append(["<comma>", word])
-                elif word == "+":
-                    tl.append(["<plus>", word])
-                elif word == "-":
-                    tl.append(["<minus>", word])
-                elif word in table.registers:
-                    tl.append(["<reg>", word])
-                elif word in table.pairs:
-                    tl.append(["<pair>", word])
-                elif re.match(r'^.+:$',word):
-                    tl.append(["<lbl_def>", word])
-                elif(re.match(r'^(0X)[0-9A-F]+$', word)):
-                    tl.append(["<hex_num>", word])
-                elif(re.match(r'^[0-9]+$', word)):
-                    tl.append(["<dec_num>", word])
-                elif(re.match(r'^(0B)[0-1]+$', word)):
-                    tl.append(["<bin_num>", word]) 
-                elif(re.match(r'^[A-Z_]+[A-Z_]*$', word)):
-                    tl.append(["<symbol>", word])
-                elif word == "$":
-                    tl.append(["<lc>", word])
-                else:
-                    tl.append(["<idk_man>", word])
-                    error("Unknown token: " + word, line)
-                    return [0 , 0]
-            else:
+            ################################################################
+            if(commentCapture):
+                block[-1] += word
+            ################################################################
+            elif(stringCapture):
+                block[1].append(word)
                 slash_count = 0
                 if(word == "\""):
                     for x in reversed(tl[-1][1]):
@@ -184,7 +117,85 @@ def lexer(lines):
                         tl.append(["<string_seg>", word])
                 else:
                     tl.append(["<string_seg>", word])
-        tokens.append(tl)
+            ################################################################
+            else:
+                if(word == ";"):
+                    block[-1] += word          
+                    commentCapture = True
+                elif(word == "\""):
+                    block[1].append(word)
+                    tl.append(["<quote>", word])
+                    stringCapture = True
+                else:
+                    block[1].append(word)
+                    word = word.strip()
+                    word = word.upper()
+                    if word == "\"":
+                        tl.append(["<quote>", word])
+                        stringCapture = True
+                    elif(re.match(r'^\s*$',word)):
+                        pass
+                    elif word in table.mnm_r_i:
+                        tl.append(["<mnm_r_i>", word])
+                    elif word in table.mnm_r_l:
+                        tl.append(["<mnm_r_l>", word])
+                    elif word in table.mnm_r_r:
+                        tl.append(["<mnm_r_r>", word])
+                    elif word in table.mnm_r:
+                        tl.append(["<mnm_r>", word])
+                    elif word in table.mnm_r_rp:
+                        tl.append(["<mnm_r_rp>", word])
+                    elif word in table.mnm_rp:
+                        tl.append(["<mnm_rp>", word])
+                    elif word in table.mnm_a:
+                        tl.append(["<mnm_a>", word])
+                    elif word in table.mnm_n:
+                        tl.append(["<mnm_n>", word])
+                    elif word in table.mnm_m:
+                        tl.append(["<mnm_m>", word])
+                    elif word in table.drct_0:
+                        tl.append(["<drct_0>", word])
+                    elif word in table.drct_1:
+                        tl.append(["<drct_1>", word])
+                    elif word in table.drct_2:
+                        tl.append(["<drct_2>", word])
+                    elif word in table.drct_m:
+                        tl.append(["<drct_m>", word])
+                    elif word in table.drct_s:
+                        tl.append(["<drct_s>", word])
+                    elif word == "[L]" or word == "[H]":
+                        tl.append(["<selector>", word])
+                    elif word == ",":
+                        tl.append(["<comma>", word])
+                    elif word == "+":
+                        tl.append(["<plus>", word])
+                    elif word == "-":
+                        tl.append(["<minus>", word])
+                    elif word in table.registers:
+                        tl.append(["<reg>", word])
+                    elif word in table.pairs:
+                        tl.append(["<pair>", word])
+                    elif re.match(r'^.+:$',word):
+                        tl.append(["<lbl_def>", word])
+                    elif(re.match(r'^(0X)[0-9A-F]+$', word)):
+                        tl.append(["<hex_num>", word])
+                    elif(re.match(r'^[0-9]+$', word)):
+                        tl.append(["<dec_num>", word])
+                    elif(re.match(r'^(0B)[0-1]+$', word)):
+                        tl.append(["<bin_num>", word]) 
+                    elif(re.match(r'^[A-Z_0-9]+$', word)):
+                        tl.append(["<symbol>", word])
+                    elif word == "$":
+                        tl.append(["<lc>", word])
+                    else:
+                        tl.append(["<idk_man>", word])
+                        error("Unknown token: " + word, line)
+                        return [0 , 0]
+            ################################################################            
+        if(block[1]):
+            tokens.append(tl)
+            codeLines.append(block)
+
     return [codeLines, tokens]
 ##############################################################################################################
 def error(message, line):
@@ -321,7 +332,7 @@ def parse_lbl_def(tokens, symbols, code, line):
             return er
         elif re.match(r'^(0X)[0-9A-F]+$',lbl[:-1] or
              re.match(r'^[0-9]+$',lbl[:-1]) or
-             re.match(r'^(0B)[0-1]+$')):
+             re.match(r'^(0B)[0-1]+$',lbl[:-1])):
             error("Label cannot be number!",line)
             return er
         elif lbl[:-1] in (symbols.defs):
@@ -422,7 +433,7 @@ def store_string(arg, symbols, code, line):
 
     for char in arg:
         if(int(ord(char)) > 128):
-            error("Unsupported character in string!",line)
+            error("Unsupported character in string: " + str(char),line)
             return 0
 
     new_str = bytes(arg,"utf-8").decode("unicode_escape")
@@ -804,7 +815,7 @@ def parse_code(tokens, symbols, code, line):
         ##################################################
         # Code Generation
         instruction = table.mnm_rp[inst_str]
-        instruction = format(int(reg1[1:]),'04b') + instruction[4:]
+        instruction = instruction[:4] + format(int(reg1[1:]),'04b') + instruction[8:]
         code_string = inst_str + " " + reg1
         code.write_code(line,instruction,code_string,0)
         return data
@@ -949,7 +960,7 @@ def second_pass(symbols, code):
         code_line = code.code_data[i]
         line = code_line[0]
         if(code_line[-1]):
-            val = evaluate(code_line[-1][1],symbols,code_line[2])
+            val = evaluate(code_line[-1][1],symbols,int(code_line[2],base=16))
             if(len(val) == 1):
                 numb = val[0]
                 ##################################################
@@ -1040,17 +1051,31 @@ def output(code, file_name, args):
         code_file = open(file_name + ".instructions",'w') if file_name else sys.stdout
         data_file = open(file_name + ".data",'w') if file_name else sys.stdout
 
-        print("Line Number\tAddress\t\tLabel\t\tCode\t\t\tSource",file=code_file)
-        print("----------------------------------------------------------------------------------------------------",file=code_file)
+        print('{:<16}'.format("Line Number") + '{:<15}'.format("Address") + '{:<15}'.format("Label") + '{:<25}'.format("Code") + '{:<30}'.format("Source") + '{:<20}'.format("Comments"),file=code_file)
+        for x in range(120):
+            print("-",end="",file=code_file)
+        print("",file=code_file)
+        previous_line = -1
         for x in code.code_data:
-            print(x[1] + "\t\t" + "0x"+x[2] + "\t\t" + x[3] + "\t\t" + "0b"+x[4] + "\t" + x[5],file=code_file)
+            comment = ""
+            if(previous_line != int(x[1])):
+                comment = x[0][-1]
+            print('{:<16}'.format(x[1]) + '{:<15}'.format("0x"+x[2]) + '{:<15}'.format(x[3]) + '{:<25}'.format("0b"+x[4]) + '{:<30}'.format(x[5]) + '{:<20}'.format(comment),file=code_file)
+            previous_line = int(x[1])
+        
         if(not file_name):
             print()
-        print("Line Number\tAddress\t\tLabel\t\tData",file=data_file)
-        print("----------------------------------------------------------------------------------------------------",file=data_file)
-        for x in code.data_data:
-            print(x[1] + "\t\t" + "0x"+x[2] + "\t\t" + x[3] + "\t\t" + "0x"+x[4],file=data_file)
 
+        print('{:<16}'.format("Line Number") + '{:<15}'.format("Address") + '{:<15}'.format("Label") + '{:<25}'.format("Data") + '{:<20}'.format("Comments"),file=data_file)
+        for x in range(120):
+            print("-",end="",file=data_file)
+        print("",file=data_file)
+        for x in code.data_data:
+            comment = ""
+            if(previous_line != int(x[1])):
+                comment = x[0][-1]
+            print('{:<16}'.format(x[1]) + '{:<15}'.format("0x"+x[2]) + '{:<15}'.format(x[3]) + '{:<25}'.format("0x"+x[4]) + '{:<20}'.format(comment),file=data_file)
+            previous_line = int(x[1])
     else:
         instruction_list = []
         data_list = []
