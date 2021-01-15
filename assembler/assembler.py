@@ -54,10 +54,10 @@ def read(name):
     # [[Line_number, Program_Counter] [body] [comment]]
     # Line_number corrisponds to the line on the 
     # source code. the Program_Counter is incremented
-    # every time there is a non-empty line (even a comment
-    # counts as non empty). Note that two consecutive PC
-    # locations do NOT nessisarily corrispond to two
-    # consecutive address locations
+    # every time there is a non-empty line. Note that two
+    # consecutive PC locations do NOT nessisarily corrispond
+    # to two consecutive address locations. The comment feild
+    # is initially left blank, but is used later by the lexer
 
     # [[Line_number, Program_Counter] [body] 'comment']
     
@@ -88,9 +88,7 @@ def lexer(lines):
     codeLines = []
     tokens = []
 
-    i = 0
-    while(i < len(lines)):
-        line = lines[i]
+    for line in lines:
 
         tl = []
         block = [line[0],[],""]
@@ -98,9 +96,7 @@ def lexer(lines):
         commentCapture = False
         stringCapture = False
 
-        j = 0
-        while(j < len(line[1])):
-            word = line[1][j]
+        for word in line[1]:
             ################################################################
             if(commentCapture):
                 block[-1] += word
@@ -187,7 +183,7 @@ def lexer(lines):
                         tl.append(["<dec_num>", word])
                     elif(re.match(r'^(0B)[0-1]+$', word)):
                         tl.append(["<bin_num>", word]) 
-                    elif(re.match(r'^[A-Z_]+[A-Z_]*$', word)):
+                    elif(re.match(r'^[A-Z_0-9]+$', word)):
                         tl.append(["<symbol>", word])
                     elif word == "$":
                         tl.append(["<lc>", word])
@@ -195,14 +191,11 @@ def lexer(lines):
                         tl.append(["<idk_man>", word])
                         error("Unknown token: " + word, line)
                         return [0 , 0]
-            ################################################################
-            j += 1
-            
+            ################################################################            
         if(block[1]):
             tokens.append(tl)
             codeLines.append(block)
 
-        i += 1
     return [codeLines, tokens]
 ##############################################################################################################
 def error(message, line):
@@ -339,7 +332,7 @@ def parse_lbl_def(tokens, symbols, code, line):
             return er
         elif re.match(r'^(0X)[0-9A-F]+$',lbl[:-1] or
              re.match(r'^[0-9]+$',lbl[:-1]) or
-             re.match(r'^(0B)[0-1]+$')):
+             re.match(r'^(0B)[0-1]+$',lbl[:-1])):
             error("Label cannot be number!",line)
             return er
         elif lbl[:-1] in (symbols.defs):
@@ -440,7 +433,7 @@ def store_string(arg, symbols, code, line):
 
     for char in arg:
         if(int(ord(char)) > 128):
-            error("Unsupported character in string!",line)
+            error("Unsupported character in string: " + str(char),line)
             return 0
 
     new_str = bytes(arg,"utf-8").decode("unicode_escape")
@@ -822,7 +815,7 @@ def parse_code(tokens, symbols, code, line):
         ##################################################
         # Code Generation
         instruction = table.mnm_rp[inst_str]
-        instruction = format(int(reg1[1:]),'04b') + instruction[4:]
+        instruction = instruction[:4] + format(int(reg1[1:]),'04b') + instruction[8:]
         code_string = inst_str + " " + reg1
         code.write_code(line,instruction,code_string,0)
         return data
@@ -967,7 +960,7 @@ def second_pass(symbols, code):
         code_line = code.code_data[i]
         line = code_line[0]
         if(code_line[-1]):
-            val = evaluate(code_line[-1][1],symbols,code_line[2])
+            val = evaluate(code_line[-1][1],symbols,int(code_line[2],base=16))
             if(len(val) == 1):
                 numb = val[0]
                 ##################################################
@@ -1058,17 +1051,31 @@ def output(code, file_name, args):
         code_file = open(file_name + ".instructions",'w') if file_name else sys.stdout
         data_file = open(file_name + ".data",'w') if file_name else sys.stdout
 
-        print("Line Number\tAddress\t\tLabel\t\tCode\t\t\tSource",file=code_file)
-        print("----------------------------------------------------------------------------------------------------",file=code_file)
+        print('{:<16}'.format("Line Number") + '{:<15}'.format("Address") + '{:<15}'.format("Label") + '{:<25}'.format("Code") + '{:<30}'.format("Source") + '{:<20}'.format("Comments"),file=code_file)
+        for x in range(120):
+            print("-",end="",file=code_file)
+        print("",file=code_file)
+        previous_line = -1
         for x in code.code_data:
-            print(x[1] + "\t\t" + "0x"+x[2] + "\t\t" + x[3] + "\t\t" + "0b"+x[4] + "\t" + x[5],file=code_file)
+            comment = ""
+            if(previous_line != int(x[1])):
+                comment = x[0][-1]
+            print('{:<16}'.format(x[1]) + '{:<15}'.format("0x"+x[2]) + '{:<15}'.format(x[3]) + '{:<25}'.format("0b"+x[4]) + '{:<30}'.format(x[5]) + '{:<20}'.format(comment),file=code_file)
+            previous_line = int(x[1])
+        
         if(not file_name):
             print()
-        print("Line Number\tAddress\t\tLabel\t\tData",file=data_file)
-        print("----------------------------------------------------------------------------------------------------",file=data_file)
-        for x in code.data_data:
-            print(x[1] + "\t\t" + "0x"+x[2] + "\t\t" + x[3] + "\t\t" + "0x"+x[4],file=data_file)
 
+        print('{:<16}'.format("Line Number") + '{:<15}'.format("Address") + '{:<15}'.format("Label") + '{:<25}'.format("Data") + '{:<20}'.format("Comments"),file=data_file)
+        for x in range(120):
+            print("-",end="",file=data_file)
+        print("",file=data_file)
+        for x in code.data_data:
+            comment = ""
+            if(previous_line != int(x[1])):
+                comment = x[0][-1]
+            print('{:<16}'.format(x[1]) + '{:<15}'.format("0x"+x[2]) + '{:<15}'.format(x[3]) + '{:<25}'.format("0x"+x[4]) + '{:<20}'.format(comment),file=data_file)
+            previous_line = int(x[1])
     else:
         instruction_list = []
         data_list = []
