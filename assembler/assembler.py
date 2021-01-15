@@ -183,7 +183,7 @@ def lexer(lines):
                         tl.append(["<dec_num>", word])
                     elif(re.match(r'^(0B)[0-1]+$', word)):
                         tl.append(["<bin_num>", word]) 
-                    elif(re.match(r'^[A-Z_]+[A-Z_0-9]*$', word)):
+                    elif(re.match(r'^[A-Z_0-9]+$', word)):
                         tl.append(["<symbol>", word])
                     elif word == "$":
                         tl.append(["<lc>", word])
@@ -332,7 +332,7 @@ def parse_lbl_def(tokens, symbols, code, line):
             return er
         elif re.match(r'^(0X)[0-9A-F]+$',lbl[:-1] or
              re.match(r'^[0-9]+$',lbl[:-1]) or
-             re.match(r'^(0B)[0-1]+$')):
+             re.match(r'^(0B)[0-1]+$',lbl[:-1])):
             error("Label cannot be number!",line)
             return er
         elif lbl[:-1] in (symbols.defs):
@@ -433,7 +433,7 @@ def store_string(arg, symbols, code, line):
 
     for char in arg:
         if(int(ord(char)) > 128):
-            error("Unsupported character in string!",line)
+            error("Unsupported character in string: " + str(char),line)
             return 0
 
     new_str = bytes(arg,"utf-8").decode("unicode_escape")
@@ -815,7 +815,7 @@ def parse_code(tokens, symbols, code, line):
         ##################################################
         # Code Generation
         instruction = table.mnm_rp[inst_str]
-        instruction = format(int(reg1[1:]),'04b') + instruction[4:]
+        instruction = instruction[:4] + format(int(reg1[1:]),'04b') + instruction[8:]
         code_string = inst_str + " " + reg1
         code.write_code(line,instruction,code_string,0)
         return data
@@ -960,7 +960,7 @@ def second_pass(symbols, code):
         code_line = code.code_data[i]
         line = code_line[0]
         if(code_line[-1]):
-            val = evaluate(code_line[-1][1],symbols,code_line[2])
+            val = evaluate(code_line[-1][1],symbols,int(code_line[2],base=16))
             if(len(val) == 1):
                 numb = val[0]
                 ##################################################

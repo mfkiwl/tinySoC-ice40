@@ -5,11 +5,15 @@
 ;*************************************************      
         .code
 
-        ldi r0, 0b00011000
+        ldi r0, 0b00001100
         out r0, gpu_ctrl_reg
 
         ldi r2, gpu_addr[l]
         ldi r3, gpu_addr[h]
+
+stable: in r0, gpu_ctrl_reg
+        ani r0, 0x80
+        jz stable
 
         ldi r0, text[l]
         ldi r1, text[h]
@@ -17,7 +21,6 @@
 loop:   lri r4, p0
         cpi r4, 0
         jz end
-
         sri r4, p2
         jmp loop
 

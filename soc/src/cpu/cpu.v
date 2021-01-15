@@ -1,4 +1,5 @@
 module cpu(input wire clk,
+           input wire reset,
 
            output reg [15:0] iMemAddress,
            input wire [15:0] iMemOut,
@@ -17,11 +18,46 @@ module cpu(input wire clk,
            output wire interrupt_0_clr,
            output wire interrupt_1_clr,
            output wire interrupt_2_clr,
-           output wire interrupt_3_clr
+           output wire interrupt_3_clr,
+           output wire reset_out
 );
     //***************************************************************
     // Instantiate Control Logic
-
+    control cntrl(.clk(clk),
+                  .reset(reset),
+                  .iMemOut(iMemOut),
+                  .carryFlag(carryFlag),
+                  .zeroFlag(zeroFlag),
+                  .negativeFlag(negativeFlag),
+                  .interruptEnable(interruptEnable),
+                  .regFileSrc(regFileSrc),
+                  .regFileOutBSelect(regFileOutBSelect),
+                  .regFileWriteEnable(regFileWriteEnable),
+                  .regFileIncPair(regFileIncPair),
+                  .regFileDecPair(regFileDecPair),
+                  .aluSrcASelect(aluSrcASelect),
+                  .aluSrcBSelect(aluSrcBSelect),
+                  .aluMode(aluMode),
+                  .dMemDataSelect(dMemDataSelect),
+                  .dMemIOAddressSelect(dMemIOAddressSelect),
+                  .dMemIOWriteEn(dMemIOWriteEn),
+                  .dMemIOReadEn(dMemIOReadEn),
+                  .statusRegSrcSelect(statusRegSrcSelect),
+                  .flagEnable(flagEnable),
+                  .iMemAddrSelect(iMemAddrSelect),
+                  .iMemReadEnable(iMemReadEnable),
+                  .pcWriteEn(pcWriteEn),
+                  .interruptVector(interruptVector),
+                  .interrupt_0(interrupt_0),
+                  .interrupt_1(interrupt_1),
+                  .interrupt_2(interrupt_2),
+                  .interrupt_3(interrupt_3),
+                  .interrupt_0_clr(interrupt_0_clr),
+                  .interrupt_1_clr(interrupt_1_clr),
+                  .interrupt_2_clr(interrupt_2_clr),
+                  .interrupt_3_clr(interrupt_3_clr),
+                  .reset_out(reset_out)
+    );
     //***************************************************************
     // Register File Source Mux
     wire [1:0] regFileSrc;                      //*
@@ -43,14 +79,24 @@ module cpu(input wire clk,
     wire [7:0] regFileOutA;
     wire [7:0] regFileOutB;
     wire [7:0] regFileOutC;
-
+    regFile registerFile(.inSelect(iMemOut[15:12]),
+                         .outBselect(regFileOutBSelect),
+                         .in(regFileIn),
+                         .write_en(regFileWriteEnable),
+                         .inc(regFileIncPair),
+                         .dec(regFileDecPair),
+                         .clk(clk),
+                         .outA(regFileOutA),
+                         .outB(regFileOutB),
+                         .outC(regFileOutC)
+    );
     //***************************************************************
     // ALU Mux A
     wire aluSrcASelect;                         //*
     always @(*) begin
         case(aluSrcASelect)
-        1'b0:   dataA = {4'd0,statusOut};       // From zero-extended status register
-        1'b1:   dataA = regFileOutA;            // From the register file
+        1'b0:   dataA = regFileOutA;            // From the register file
+        1'b1:   dataA = {4'd0,statusOut};       // From zero-extended status register
         endcase
     end
     //***************************************************************
@@ -73,15 +119,23 @@ module cpu(input wire clk,
     wire [7:0] aluOut;
     reg [7:0] dataA;
     reg [7:0] dataB;
-    
+    alu ALU(.dataA(dataA),
+            .dataB(dataB),
+            .mode(aluMode),
+            .cin(carryFlag),
+            .out(aluOut),
+            .cout(carryOut),
+            .zout(zeroOut),
+            .nout(negitiveOut)
+    );
     //***************************************************************
     // Data Memory and I/O Data Mux
     wire [2:0] dMemDataSelect;                  //*
     always @(*) begin
         case(dMemDataSelect)
-            3'b000:  dMemIOIn = pcPlusOne[15:8];        // From MSBs of the PC + 1
-            3'b001:  dMemIOIn = pcPlusOne[7:0];         // From LSBs of the PC + 1
-            3'b010:  dMemIOIn = aluOut;                 // From the ALU
+            3'b000:  dMemIOIn = aluOut;                 // From the ALU
+            3'b001:  dMemIOIn = pcPlusOne[15:8];        // From MSBs of the PC + 1
+            3'b010:  dMemIOIn = pcPlusOne[7:0];         // From LSBs of the PC + 1
             3'b011:  dMemIOIn = current_address[15:8];  // From MSBs of the current address
             3'b100:  dMemIOIn = current_address[7:0];   // From LSBs of the current address
             default  dMemIOIn = current_address[7:0];
@@ -147,8 +201,8 @@ module cpu(input wire clk,
     wire [2:0] iMemAddrSelect;                  //*
     always @(*) begin
         case(iMemAddrSelect)
-        3'b000:     iMemAddress = pcPlusOne;
-        3'b001:     iMemAddress = pcOut;
+        3'b000:     iMemAddress = pcOut;
+        3'b001:     iMemAddress = pcPlusOne;
         3'b010:     iMemAddress = interruptVector;
         3'b011:     iMemAddress = iMemOut;
         3'b100:     iMemAddress = {regFileOutC, regFileOutB};
@@ -164,61 +218,14 @@ module cpu(input wire clk,
     wire [15:0] pcPlusOne = pcOut + 1;
     wire pcWriteEn;                             //*
     always @(posedge clk) begin
-        if(pcWriteEn)
-            pc <= pcIn;
+        if(pcWriteEn) begin
+            if(reset_out) begin
+                pc <= 16'd0;
+            end
+            else begin
+                pc <= pcIn; 
+            end
+        end
     end
-    //***************************************************************
-    control cntrl(.clk(clk),
-                  .iMemOut(iMemOut),
-                  .carryFlag(carryFlag),
-                  .zeroFlag(zeroFlag),
-                  .negativeFlag(negativeFlag),
-                  .interruptEnable(interruptEnable),
-                  .regFileSrc(regFileSrc),
-                  .regFileOutBSelect(regFileOutBSelect),
-                  .regFileWriteEnable(regFileWriteEnable),
-                  .regFileIncPair(regFileIncPair),
-                  .regFileDecPair(regFileDecPair),
-                  .aluSrcASelect(aluSrcASelect),
-                  .aluSrcBSelect(aluSrcBSelect),
-                  .aluMode(aluMode),
-                  .dMemDataSelect(dMemDataSelect),
-                  .dMemIOAddressSelect(dMemIOAddressSelect),
-                  .dMemIOWriteEn(dMemIOWriteEn),
-                  .dMemIOReadEn(dMemIOReadEn),
-                  .statusRegSrcSelect(statusRegSrcSelect),
-                  .flagEnable(flagEnable),
-                  .iMemAddrSelect(iMemAddrSelect),
-                  .iMemReadEnable(iMemReadEnable),
-                  .pcWriteEn(pcWriteEn),
-                  .interruptVector(interruptVector),
-                  .interrupt_0(interrupt_0),
-                  .interrupt_1(interrupt_1),
-                  .interrupt_2(interrupt_2),
-                  .interrupt_3(interrupt_3),
-                  .interrupt_0_clr(interrupt_0_clr),
-                  .interrupt_1_clr(interrupt_1_clr),
-                  .interrupt_2_clr(interrupt_2_clr),
-                  .interrupt_3_clr(interrupt_3_clr)
-    );
-    regFile registerFile(.inSelect(iMemOut[15:12]),
-                         .outBselect(regFileOutBSelect),
-                         .in(regFileIn),
-                         .write_en(regFileWriteEnable),
-                         .inc(regFileIncPair),
-                         .dec(regFileDecPair),
-                         .clk(clk),
-                         .outA(regFileOutA),
-                         .outB(regFileOutB),
-                         .outC(regFileOutC)
-    );
-    alu ALU(.dataA(dataA),
-            .dataB(dataB),
-            .mode(aluMode),
-            .cin(carryFlag),
-            .out(aluOut),
-            .cout(carryOut),
-            .zout(zeroOut),
-            .nout(negitiveOut)
-    );    
+    //***************************************************************    
 endmodule
